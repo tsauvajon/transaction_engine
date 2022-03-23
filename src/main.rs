@@ -6,7 +6,7 @@ use std::fs::File;
 
 fn main() {
     let input = File::open("transactions.csv").unwrap();
-    let transactions = parse(input);
+    let transactions = parse(input).expect("malformed CSV");
 
     let ledger = balance::Ledger::new(transactions);
 
