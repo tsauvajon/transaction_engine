@@ -16,7 +16,12 @@ use std::collections::HashMap;
 // Besides, maintenance is easier: changing client ids e.g. from u16 to u32 is trivial.
 pub type ClientId = u16;
 pub type TransactionId = u32;
-pub type Amount = f32; // TODO 4 decimal places for all amounts. Use bigdecimal??
+
+// I decided to use a decimal library instead of the built-in f32 type, to be
+// safer when dealing with money, and making the decimal precision easier to
+// deal with.
+pub type Amount = rust_decimal::Decimal;
+const DECIMAL_PRECISION: u32 = 4;
 
 #[derive(Debug, PartialEq)]
 pub enum TransactionType {
@@ -29,9 +34,48 @@ pub enum TransactionType {
 
 #[derive(Debug, PartialEq)]
 pub struct Transaction {
-    pub tx_type: TransactionType,
-    pub client_id: ClientId,
-    pub tx_id: TransactionId,
+    tx_type: TransactionType,
+    client_id: ClientId,
+    tx_id: TransactionId,
+}
+
+impl Transaction {
+    // I made the Transaction fields private and used a "new" function to make sure we could only
+    // ever create transactions with 4 decimal places amounts.
+    pub fn new(tx_type: TransactionType, client_id: ClientId, tx_id: TransactionId) -> Self {
+        let tx_type = match tx_type {
+            TransactionType::Deposit(amount) => {
+                TransactionType::Deposit(amount.round_dp(DECIMAL_PRECISION))
+            }
+            TransactionType::Withdrawal(amount) => {
+                TransactionType::Withdrawal(amount.round_dp(DECIMAL_PRECISION))
+            }
+            _ => tx_type,
+        };
+
+        Self {
+            tx_type,
+            client_id,
+            tx_id,
+        }
+    }
+}
+
+#[test]
+// Decimal precision is 4 places. We should be unable to have more precise amounts.
+fn test_transaction_decimal_precision() {
+    use rust_decimal_macros::dec;
+
+    for (raw_amount, want_amount) in vec![
+        (dec!(1.0), dec!(1.0)),
+        (dec!(0.999999), dec!(1.0)),
+        (dec!(1.0000001), dec!(1.0)),
+        (dec!(1.2345), dec!(1.2345)),
+        (dec!(1.23459), dec!(1.2346)),
+    ] {
+        let tx = Transaction::new(TransactionType::Withdrawal(raw_amount), 1, 1);
+        assert_eq!(TransactionType::Withdrawal(want_amount), tx.tx_type);
+    }
 }
 
 pub enum TransactionState {
@@ -90,12 +134,10 @@ pub enum TransactionError {
     InvalidTransaction,
 }
 
-// TODO: impl Serialize
 pub struct Balance {
-    pub frozen: bool, // TODO: serialise as `blocked`
-
-    pub available_amount: Amount, // TODO: serialise as `available` (TODO: bigdecimal?)
-    pub held_amount: Amount,      // TODO: serialise as `held`
+    pub frozen: bool,
+    pub available_amount: Amount,
+    pub held_amount: Amount,
 
     // tx_states is a state machine. For example, you can only dispute a
     // Deposited transaction, and you can only resolve a Disputed transaction.
@@ -106,8 +148,8 @@ impl Balance {
     fn new() -> Self {
         Balance {
             frozen: false,
-            available_amount: 0.0,
-            held_amount: 0.0,
+            available_amount: rust_decimal::Decimal::default(),
+            held_amount: rust_decimal::Decimal::default(),
             tx_states: HashMap::new(),
         }
     }
@@ -186,7 +228,8 @@ impl Balance {
     ) -> Result<(), TransactionError> {
         self.available_amount += amount;
 
-        // If we've already seen that transaction, we probably have a data issue.
+        // We've already seen that transaction, so we probably have a data issue.
+        // We can safely return an error.
         if self.tx_states.contains_key(&tx_id) {
             return Err(TransactionError::DuplicateTransaction);
         }

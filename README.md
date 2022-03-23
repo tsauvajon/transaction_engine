@@ -1,3 +1,5 @@
+## How to use
+
 ## Design
 Built for:
 - maintenability

@@ -1,4 +1,5 @@
 use super::ledger::{Transaction, TransactionType};
+use rust_decimal::Decimal;
 use serde::Deserialize;
 
 #[derive(Debug, PartialEq)]
@@ -150,7 +151,7 @@ struct TransactionRecord {
     #[serde(rename = "tx")]
     transaction_id: u32,
 
-    amount: Option<f32>,
+    amount: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -174,25 +175,23 @@ enum TransactionRecordType {
 impl TryFrom<TransactionRecord> for Transaction {
     type Error = &'static str;
     fn try_from(record: TransactionRecord) -> Result<Self, Self::Error> {
-        Ok(Self {
-            client_id: record.client_id,
-            tx_id: record.transaction_id,
-            tx_type: match record.tx_type {
-                TransactionRecordType::Withdrawal => {
-                    TransactionType::Withdrawal(match record.amount {
-                        Some(amount) => amount,
-                        None => return Err("missing amount for withdrawal"),
-                    })
-                }
-                TransactionRecordType::Deposit => TransactionType::Deposit(match record.amount {
-                    Some(amount) => amount,
-                    None => return Err("missing amount for deposit"),
-                }),
-                TransactionRecordType::Dispute => TransactionType::Dispute,
-                TransactionRecordType::Resolve => TransactionType::Resolve,
-                TransactionRecordType::Chargeback => TransactionType::Chargeback,
-            },
-        })
+        let client_id = record.client_id;
+        let tx_id = record.transaction_id;
+        let tx_type = match record.tx_type {
+            TransactionRecordType::Withdrawal => TransactionType::Withdrawal(match record.amount {
+                Some(amount) => amount,
+                None => return Err("missing amount for withdrawal"),
+            }),
+            TransactionRecordType::Deposit => TransactionType::Deposit(match record.amount {
+                Some(amount) => amount,
+                None => return Err("missing amount for deposit"),
+            }),
+            TransactionRecordType::Dispute => TransactionType::Dispute,
+            TransactionRecordType::Resolve => TransactionType::Resolve,
+            TransactionRecordType::Chargeback => TransactionType::Chargeback,
+        };
+
+        Ok(Self::new(tx_type, client_id, tx_id))
     }
 }
 
@@ -205,26 +204,18 @@ fn test_transaction_record_into_transaction_well_formed() {
                 tx_type: TransactionRecordType::Withdrawal,
                 client_id: 1,
                 transaction_id: 5,
-                amount: Some(1.2),
+                amount: Some(Decimal::new(12, 1)),
             },
-            Transaction {
-                tx_type: TransactionType::Withdrawal(1.2),
-                client_id: 1,
-                tx_id: 5,
-            },
+            Transaction::new(TransactionType::Withdrawal(Decimal::new(12, 1)), 1, 5),
         ),
         (
             TransactionRecord {
                 tx_type: TransactionRecordType::Deposit,
                 client_id: 2,
                 transaction_id: 4,
-                amount: Some(2.1),
+                amount: Some(Decimal::new(21, 1)),
             },
-            Transaction {
-                tx_type: TransactionType::Deposit(2.1),
-                client_id: 2,
-                tx_id: 4,
-            },
+            Transaction::new(TransactionType::Deposit(Decimal::new(21, 1)), 2, 4),
         ),
         (
             TransactionRecord {
@@ -233,11 +224,7 @@ fn test_transaction_record_into_transaction_well_formed() {
                 transaction_id: 333,
                 amount: None,
             },
-            Transaction {
-                tx_type: TransactionType::Dispute,
-                client_id: 33,
-                tx_id: 333,
-            },
+            Transaction::new(TransactionType::Dispute, 33, 333),
         ),
         (
             TransactionRecord {
@@ -246,11 +233,7 @@ fn test_transaction_record_into_transaction_well_formed() {
                 transaction_id: 444,
                 amount: None,
             },
-            Transaction {
-                tx_type: TransactionType::Resolve,
-                client_id: 44,
-                tx_id: 444,
-            },
+            Transaction::new(TransactionType::Resolve, 44, 444),
         ),
         (
             TransactionRecord {
@@ -259,23 +242,13 @@ fn test_transaction_record_into_transaction_well_formed() {
                 transaction_id: 555,
                 amount: None,
             },
-            Transaction {
-                tx_type: TransactionType::Chargeback,
-                client_id: 55,
-                tx_id: 555,
-            },
+            Transaction::new(TransactionType::Chargeback, 55, 555),
         ),
     ];
 
     for (record, tx) in test_cases {
         assert_eq!(tx, record.try_into().unwrap());
     }
-}
-
-#[test]
-// Decimal precision is 4 places. The parsed amounts should reflect that.
-fn test_transaction_record_into_transaction_decimal_places() {
-    todo!();
 }
 
 #[test]

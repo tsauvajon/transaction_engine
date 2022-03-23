@@ -1,8 +1,13 @@
 [package]
-name = "kraken_tx_engine"
+name = "transaction_engine"
 version = "0.1.0"
 edition = "2021"
 
+# Note: I chose to pin MINOR versions as a compromise between:
+# - pinning MAJOR versions (it could cause incompatibility)
+# - pinning PATCH versions (we wouldn't get PATCH updates which are not supposed to change the API in any way)
 [dependencies]
 csv = "1.1"
+rust_decimal = "1.22"
+rust_decimal_macros = "1.22"
 serde = { version = "1.0", features = ["derive"] }
