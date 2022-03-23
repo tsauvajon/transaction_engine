@@ -28,7 +28,9 @@ impl From<&str> for Error {
 // for analysis and recovery.
 pub fn parse(input: impl std::io::Read) -> Result<Vec<Transaction>, Error> {
     let buffered = std::io::BufReader::new(input);
-    let mut reader = csv::Reader::from_reader(buffered);
+    let mut reader = csv::ReaderBuilder::new()
+        .trim(csv::Trim::All)
+        .from_reader(buffered);
 
     reader
         .deserialize::<TransactionRecord>()
@@ -50,6 +52,19 @@ resolve,1,1,
 chargeback,1,1,"#;
     let reader = std::io::Cursor::new(data);
     let transactions = parse(reader).expect("parsing should succeed");
+    assert_eq!(5, transactions.len());
+}
+
+#[test]
+fn test_parse_ok_with_whitespace() {
+    let data = r#"type,     client,     tx,amount
+deposit, 1, 1, 1.0
+withdrawal , 1 , 4 , 1.5
+dispute ,   1   ,   1   ,
+    resolve ,1,1,
+        chargeback                  ,1,1,"#;
+    let reader = std::io::Cursor::new(data);
+    let transactions = parse(reader).expect("parsing should succeed even with whitespace");
     assert_eq!(5, transactions.len());
 }
 

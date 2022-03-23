@@ -50,6 +50,9 @@ impl Ledger {
     /// To build a ledger, we need a list of transactions.
     /// The ledger will build its own state, by applying each transaction to
     /// the correct client's balance.
+    ///
+    /// TODO: accept a stream of transactions, instead of a vec, and move the
+    /// execution out of "new".
     pub fn new(transactions: Vec<Transaction>) -> Self {
         let mut ledger: HashMap<ClientId, Balance> = HashMap::new();
 
