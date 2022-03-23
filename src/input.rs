@@ -1,22 +1,30 @@
-use super::ledger::{Transaction, TransactionType};
+use super::ledger::transaction::{self, Transaction};
 use rust_decimal::Decimal;
 use serde::Deserialize;
+use std::sync::mpsc::{self, Receiver, SendError, Sender};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
-    Csv(String),
-    Format(String),
+    Csv(String),    // CSV is malformed
+    Format(String), // Data format is incorrect
+    Send(String),   // Sending to the channel failed
 }
 
 impl From<csv::Error> for Error {
     fn from(err: csv::Error) -> Self {
-        Error::Csv(err.to_string())
+        Self::Csv(err.to_string())
     }
 }
 
-impl From<&str> for Error {
-    fn from(err: &str) -> Self {
-        Error::Format(err.to_string())
+impl From<<TransactionRecord as TryInto<Transaction>>::Error> for Error {
+    fn from(err: <TransactionRecord as TryInto<Transaction>>::Error) -> Self {
+        Self::Format(err.to_string())
+    }
+}
+
+impl From<SendError<Transaction>> for Error {
+    fn from(err: SendError<Transaction>) -> Self {
+        Self::Send(err.to_string())
     }
 }
 
@@ -27,19 +35,34 @@ impl From<&str> for Error {
 // For a real-world scenario where we're receiving a stream of events instead,
 // we would probably filter out bad rows and send them to an external system
 // for analysis and recovery.
-pub fn parse(input: impl std::io::Read) -> Result<Vec<Transaction>, Error> {
-    let buffered = std::io::BufReader::new(input);
+pub fn parse(
+    input_stream: (impl std::io::Read + Send + 'static),
+) -> (Receiver<Transaction>, Receiver<Error>) {
+    let (transaction_tx, transaction_rx): (Sender<Transaction>, Receiver<Transaction>) =
+        mpsc::channel();
+    let (error_tx, error_rx): (Sender<Error>, Receiver<Error>) = mpsc::channel();
+
+    let buffered = std::io::BufReader::new(input_stream);
     let mut reader = csv::ReaderBuilder::new()
         .trim(csv::Trim::All)
         .from_reader(buffered);
 
-    reader
-        .deserialize::<TransactionRecord>()
-        .map(|r| match r {
-            Ok(record) => Ok(record.try_into()?),
-            Err(err) => Err(err.into()),
-        })
-        .collect()
+    // Moving to a new thread so we can start processing the transactions immediately.
+    std::thread::spawn(move || {
+        for record in reader.deserialize::<TransactionRecord>() {
+            match convert(record) {
+                Ok(transaction) => transaction_tx.send(transaction).unwrap(), // Would only fail if the rx is disconnected, which should not happen here.
+                Err(err) => error_tx.send(err).unwrap(), // Would only fail if the rx is disconnected, which should not happen here.
+            };
+        }
+    });
+
+    (transaction_rx, error_rx)
+}
+
+// Convert from a csv deserialise result into a transaction result.
+fn convert(record: Result<TransactionRecord, csv::Error>) -> Result<Transaction, Error> {
+    Ok(record?.try_into()?)
 }
 
 #[test]
@@ -52,8 +75,10 @@ dispute,1,1,
 resolve,1,1,
 chargeback,1,1,"#;
     let reader = std::io::Cursor::new(data);
-    let transactions = parse(reader).expect("parsing should succeed");
-    assert_eq!(5, transactions.len());
+    let (transactions, errors) = parse(reader);
+
+    assert_eq!(5, transactions.iter().count());
+    assert_eq!(0, errors.iter().count());
 }
 
 #[test]
@@ -65,8 +90,10 @@ dispute ,   1   ,   1   ,
     resolve ,1,1,
         chargeback                  ,1,1,"#;
     let reader = std::io::Cursor::new(data);
-    let transactions = parse(reader).expect("parsing should succeed even with whitespace");
-    assert_eq!(5, transactions.len());
+    let (transactions, errors) = parse(reader);
+
+    assert_eq!(5, transactions.iter().count());
+    assert_eq!(0, errors.iter().count());
 }
 
 #[test]
@@ -100,13 +127,16 @@ dispute,1,1,,,,"#,
         ),
     ] {
         let reader = std::io::Cursor::new(data);
-        let got_err = parse(reader);
-        assert!(got_err.is_err());
+        let (transactions, errors) = parse(reader);
 
-        let err = got_err.err().unwrap();
-        match err {
+        assert_eq!(0, transactions.iter().count());
+
+        let errs: Vec<Error> = errors.iter().collect();
+        assert_eq!(1, errs.len());
+
+        match &errs[0] {
             Error::Csv(msg) => assert!(msg.contains(err_contains), "{:?}", msg),
-            Error::Format(_) => panic!("unexpected error"),
+            _ => panic!("unexpected error"),
         }
     }
 }
@@ -128,8 +158,12 @@ withdrawal,1,1,"#,
         ),
     ] {
         let reader = std::io::Cursor::new(data);
-        let got_err = parse(reader);
-        assert_eq!(Err(want_err), got_err);
+        let (transactions, errors) = parse(reader);
+
+        assert_eq!(0, transactions.iter().count());
+
+        let errs: Vec<Error> = errors.iter().collect();
+        assert_eq!(vec![want_err], errs);
     }
 }
 
@@ -141,7 +175,7 @@ withdrawal,1,1,"#,
 // Besides, the internal Transaction type makes no assumption on how the transactions
 // are actually formatted, so both domain logic and parsing are easier to maintain.
 #[derive(Debug, Deserialize)]
-struct TransactionRecord {
+pub struct TransactionRecord {
     #[serde(rename = "type")]
     tx_type: TransactionRecordType,
 
@@ -155,7 +189,7 @@ struct TransactionRecord {
 }
 
 #[derive(Debug, Deserialize)]
-enum TransactionRecordType {
+pub enum TransactionRecordType {
     #[serde(rename = "withdrawal")]
     Withdrawal,
 
@@ -178,17 +212,19 @@ impl TryFrom<TransactionRecord> for Transaction {
         let client_id = record.client_id;
         let tx_id = record.transaction_id;
         let tx_type = match record.tx_type {
-            TransactionRecordType::Withdrawal => TransactionType::Withdrawal(match record.amount {
-                Some(amount) => amount,
-                None => return Err("missing amount for withdrawal"),
-            }),
-            TransactionRecordType::Deposit => TransactionType::Deposit(match record.amount {
+            TransactionRecordType::Withdrawal => {
+                transaction::Type::Withdrawal(match record.amount {
+                    Some(amount) => amount,
+                    None => return Err("missing amount for withdrawal"),
+                })
+            }
+            TransactionRecordType::Deposit => transaction::Type::Deposit(match record.amount {
                 Some(amount) => amount,
                 None => return Err("missing amount for deposit"),
             }),
-            TransactionRecordType::Dispute => TransactionType::Dispute,
-            TransactionRecordType::Resolve => TransactionType::Resolve,
-            TransactionRecordType::Chargeback => TransactionType::Chargeback,
+            TransactionRecordType::Dispute => transaction::Type::Dispute,
+            TransactionRecordType::Resolve => transaction::Type::Resolve,
+            TransactionRecordType::Chargeback => transaction::Type::Chargeback,
         };
 
         Ok(Self::new(tx_type, client_id, tx_id))
@@ -206,7 +242,7 @@ fn test_transaction_record_into_transaction_well_formed() {
                 transaction_id: 5,
                 amount: Some(Decimal::new(12, 1)),
             },
-            Transaction::new(TransactionType::Withdrawal(Decimal::new(12, 1)), 1, 5),
+            Transaction::new(transaction::Type::Withdrawal(Decimal::new(12, 1)), 1, 5),
         ),
         (
             TransactionRecord {
@@ -215,7 +251,7 @@ fn test_transaction_record_into_transaction_well_formed() {
                 transaction_id: 4,
                 amount: Some(Decimal::new(21, 1)),
             },
-            Transaction::new(TransactionType::Deposit(Decimal::new(21, 1)), 2, 4),
+            Transaction::new(transaction::Type::Deposit(Decimal::new(21, 1)), 2, 4),
         ),
         (
             TransactionRecord {
@@ -224,7 +260,7 @@ fn test_transaction_record_into_transaction_well_formed() {
                 transaction_id: 333,
                 amount: None,
             },
-            Transaction::new(TransactionType::Dispute, 33, 333),
+            Transaction::new(transaction::Type::Dispute, 33, 333),
         ),
         (
             TransactionRecord {
@@ -233,7 +269,7 @@ fn test_transaction_record_into_transaction_well_formed() {
                 transaction_id: 444,
                 amount: None,
             },
-            Transaction::new(TransactionType::Resolve, 44, 444),
+            Transaction::new(transaction::Type::Resolve, 44, 444),
         ),
         (
             TransactionRecord {
@@ -242,7 +278,7 @@ fn test_transaction_record_into_transaction_well_formed() {
                 transaction_id: 555,
                 amount: None,
             },
-            Transaction::new(TransactionType::Chargeback, 55, 555),
+            Transaction::new(transaction::Type::Chargeback, 55, 555),
         ),
     ];
 

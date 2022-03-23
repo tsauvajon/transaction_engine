@@ -2,6 +2,11 @@
 name = "transaction_engine"
 version = "0.1.0"
 edition = "2021"
+description = "This transactions engine can construct a ledger of accounts, from a stream of transactions."
+repository = "github.com/tsauvajon/transaction_engine"
+license = "NONE"
+keywords = ["csv", "concurrency", "channels"]
+categories = ["transactions"]
 
 # Note: I chose to pin MINOR versions as a compromise between:
 # - pinning MAJOR versions (it could cause incompatibility)
