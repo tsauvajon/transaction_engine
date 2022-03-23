@@ -2,24 +2,36 @@
 //!
 //! Ledger: contains the balances of all the clients.
 //! Balance: essentially a combination of state machine and transaction history.
-//! -
+//! TODO: expand the documentation, as this is the most important part of the program.
 
 use std::collections::HashMap;
 
+// Using named types doesn't provide any compiler help, but it helps a lot with
+// readability.
+// Consider the following, when creating the ledger HashMap:
+// (1) ledger: HashMap<u16, Balance>
+// (2) ledger: HashMap<ClientId, Balance>
+// Implementation (1) would most likely need comments, and could be confusing.
+// Implementation (2) is self-explanatory.
+// Besides, maintenance is easier: changing client ids e.g. from u16 to u32 is trivial.
+pub type ClientId = u16;
+pub type TransactionId = u32;
+pub type Amount = f32; // TODO 4 decimal places for all amounts. Use bigdecimal??
+
 #[derive(Debug, PartialEq)]
 pub enum TransactionType {
-    Withdrawal(f32), // Add a debit to the available balance. // TODO 4 decimal places for all amounts. Use bigdecimal??
-    Deposit(f32), // Add a credit to the available balance. // TODO 4 decimal places for all amounts. Use bigdecimal??
-    Dispute,      // Move funds from available to held.
-    Resolve,      // Move funds from held to available.
-    Chargeback,   // Remove funds from held. Immediately freeze the account.
+    Withdrawal(Amount), // Add a debit to the available balance.
+    Deposit(Amount),    // Add a credit to the available balance.
+    Dispute,            // Move funds from available to held.
+    Resolve,            // Move funds from held to available.
+    Chargeback,         // Remove funds from held. Immediately freeze the account.
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Transaction {
     pub tx_type: TransactionType,
-    pub client_id: u16,
-    pub tx_id: u32,
+    pub client_id: ClientId,
+    pub tx_id: TransactionId,
 }
 
 pub enum TransactionState {
@@ -31,15 +43,15 @@ pub enum TransactionState {
 
 /// A ledger builds clients balances from a list of transactions.
 pub struct Ledger {
-    /// Key = client ID. Value = client Balance.
-    pub ledger: HashMap<u16, Balance>,
+    pub ledger: HashMap<ClientId, Balance>,
 }
 
 impl Ledger {
     /// To build a ledger, we need a list of transactions.
-    /// The ledger will build its own state.
+    /// The ledger will build its own state, by applying each transaction to
+    /// the correct client's balance.
     pub fn new(transactions: Vec<Transaction>) -> Self {
-        let mut ledger: HashMap<u16, Balance> = HashMap::new();
+        let mut ledger: HashMap<ClientId, Balance> = HashMap::new();
 
         for tx in transactions {
             let balance = ledger.entry(tx.client_id).or_insert(Balance::new());
@@ -79,13 +91,12 @@ pub enum TransactionError {
 pub struct Balance {
     pub frozen: bool, // TODO: serialise as `blocked`
 
-    pub available_amount: f32, // TODO: serialise as `available` (TODO: bigdecimal?)
-    pub held_amount: f32,      // TODO: serialise as `held`
+    pub available_amount: Amount, // TODO: serialise as `available` (TODO: bigdecimal?)
+    pub held_amount: Amount,      // TODO: serialise as `held`
 
-    // Key: transaction ID. Value: state of that transaction and amount.
     // tx_states is a state machine. For example, you can only dispute a
     // Deposited transaction, and you can only resolve a Disputed transaction.
-    pub tx_states: HashMap<u32, (TransactionState, f32)>,
+    tx_states: HashMap<TransactionId, (TransactionState, Amount)>,
 }
 
 impl Balance {
@@ -99,7 +110,7 @@ impl Balance {
     }
 
     /// Get the total amount stored in the balance.
-    pub fn total_amount(&self) -> f32 {
+    pub fn total_amount(&self) -> Amount {
         self.available_amount + self.held_amount
     }
 
@@ -132,7 +143,10 @@ impl Balance {
     }
 
     // Get the current stored state of a transaction, as well as the transaction amount.
-    fn get_tx_state(&self, tx_id: &u32) -> Result<(&TransactionState, f32), TransactionError> {
+    fn get_tx_state(
+        &self,
+        tx_id: &TransactionId,
+    ) -> Result<(&TransactionState, Amount), TransactionError> {
         let (tx_state, amount) = self
             .tx_states
             .get(&tx_id)
@@ -141,7 +155,11 @@ impl Balance {
         Ok((tx_state, *amount))
     }
 
-    fn apply_withdrawal(&mut self, tx_id: u32, amount: f32) -> Result<(), TransactionError> {
+    fn apply_withdrawal(
+        &mut self,
+        tx_id: TransactionId,
+        amount: Amount,
+    ) -> Result<(), TransactionError> {
         if amount > self.available_amount {
             return Err(TransactionError::NotEnoughFunds);
         }
@@ -158,21 +176,25 @@ impl Balance {
         Ok(())
     }
 
-    fn apply_deposit(&mut self, tx_id: u32, amount: f32) -> Result<(), TransactionError> {
+    fn apply_deposit(
+        &mut self,
+        tx_id: TransactionId,
+        amount: Amount,
+    ) -> Result<(), TransactionError> {
         self.available_amount += amount;
 
         // If we've already seen that transaction, we probably have a data issue.
-        if self.tx_states.contains_key(&tx.tx_id) {
+        if self.tx_states.contains_key(&tx_id) {
             return Err(TransactionError::DuplicateTransaction);
         }
 
         self.tx_states
-            .insert(tx.tx_id, (TransactionState::Deposited, amount));
+            .insert(tx_id, (TransactionState::Deposited, amount));
 
         Ok(())
     }
 
-    fn apply_dispute(&mut self, tx_id: u32) -> Result<(), TransactionError> {
+    fn apply_dispute(&mut self, tx_id: TransactionId) -> Result<(), TransactionError> {
         let (tx_state, amount) = self.get_tx_state(&tx_id)?;
         match tx_state {
             TransactionState::Deposited => {
@@ -187,7 +209,7 @@ impl Balance {
         Ok(())
     }
 
-    fn apply_resolve(&mut self, tx_id: u32) -> Result<(), TransactionError> {
+    fn apply_resolve(&mut self, tx_id: TransactionId) -> Result<(), TransactionError> {
         let (tx_state, amount) = self.get_tx_state(&tx_id)?;
         match tx_state {
             TransactionState::Disputed => {
@@ -202,7 +224,7 @@ impl Balance {
         Ok(())
     }
 
-    fn apply_chargeback(&mut self, tx_id: u32) -> Result<(), TransactionError> {
+    fn apply_chargeback(&mut self, tx_id: TransactionId) -> Result<(), TransactionError> {
         let (_, amount) = self.get_tx_state(&tx_id)?;
 
         self.held_amount -= amount;
