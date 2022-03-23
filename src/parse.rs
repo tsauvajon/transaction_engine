@@ -1,4 +1,4 @@
-use super::balance::{Transaction, TransactionType};
+use super::ledger::{Transaction, TransactionType};
 use serde::Deserialize;
 
 #[derive(Debug, PartialEq)]
