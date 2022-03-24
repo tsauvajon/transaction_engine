@@ -5,7 +5,7 @@ use std::collections::HashMap;
 /// Note: I chose to keep errors simple here.
 /// In a real-world scenario, we would most likely need some debugging info
 /// (e.g. `tx_id`, `client_id`, `amount`, `tx_type` and some info about the current state)
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TransactionError {
     /// Account is already frozen, so no more transactions can be applied.
     FrozenAccount,
@@ -115,6 +115,44 @@ impl Account {
     }
 }
 
+#[test]
+fn test_apply_on_frozen_account() {
+    use crate::ledger::account::TransactionError;
+
+    use rust_decimal_macros::dec;
+    use std::collections::HashMap;
+
+    let mut acc = Account {
+        frozen: true,
+        available_amount: dec!(3.0),
+        held_amount: dec!(1.0),
+        tx_states: HashMap::new(),
+    };
+
+    let transaction = Transaction {
+        tx_type: transaction::Type::Deposit(dec!(5000)),
+        client_id: 15,
+        tx_id: 12,
+    };
+
+    let got = acc.apply(&transaction);
+    assert_eq!(Err(TransactionError::FrozenAccount), got);
+}
+
+#[test]
+fn test_total_amount() {
+    use rust_decimal_macros::dec;
+    use std::collections::HashMap;
+
+    let acc = Account {
+        frozen: false,
+        available_amount: dec!(3.0),
+        held_amount: dec!(1.0),
+        tx_states: HashMap::new(),
+    };
+    assert_eq!(dec!(4.0), acc.total_amount());
+}
+
 impl Account {
     fn apply_withdrawal(
         &mut self,
@@ -124,17 +162,78 @@ impl Account {
         if amount > self.available_amount {
             return Err(TransactionError::NotEnoughFunds);
         }
-        self.available_amount -= amount;
 
         // If we've already seen that transaction, we probably have a data issue.
         if self.tx_states.contains_key(&tx_id) {
             return Err(TransactionError::DuplicateTransaction);
         }
 
+        self.available_amount -= amount;
         self.tx_states
             .insert(tx_id, (TransactionState::Withdrawn, amount));
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod withdrawal_tests {
+    use crate::ledger::account::TransactionError;
+
+    use super::{Account, TransactionState};
+    use rust_decimal_macros::dec;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_withdrawal_ok() {
+        let mut acc = Account {
+            frozen: false,
+            available_amount: dec!(3.0),
+            held_amount: dec!(1.0),
+            tx_states: HashMap::new(),
+        };
+
+        let got = acc.apply_withdrawal(1, dec!(3.0));
+        assert_eq!(Ok(()), got);
+        assert_eq!(dec!(0), acc.available_amount);
+        assert_eq!(dec!(1.0), acc.held_amount);
+    }
+
+    #[test]
+    fn test_withdrawal_not_enough_funds() {
+        let mut acc = Account {
+            frozen: false,
+            available_amount: dec!(2.5),
+            held_amount: dec!(1.0),
+            tx_states: HashMap::new(),
+        };
+
+        let got = acc.apply_withdrawal(1, dec!(3.0));
+        assert_eq!(Err(TransactionError::NotEnoughFunds), got);
+        assert_eq!(dec!(2.5), acc.available_amount);
+        assert_eq!(dec!(1.0), acc.held_amount);
+    }
+
+    #[test]
+    fn test_withdrawal_already_exists() {
+        for state in vec![
+            TransactionState::Withdrawn,
+            TransactionState::Deposited,
+            TransactionState::Disputed,
+            TransactionState::ChargedBack,
+        ] {
+            let mut acc = Account {
+                frozen: false,
+                available_amount: dec!(99.99),
+                held_amount: dec!(88.88),
+                tx_states: HashMap::from([(1, (state, dec!(123.456)))]),
+            };
+
+            let got = acc.apply_withdrawal(1, dec!(3.0));
+            assert_eq!(Err(TransactionError::DuplicateTransaction), got);
+            assert_eq!(dec!(99.99), acc.available_amount);
+            assert_eq!(dec!(88.88), acc.held_amount);
+        }
     }
 }
 
@@ -144,18 +243,64 @@ impl Account {
         tx_id: TransactionId,
         amount: Amount,
     ) -> Result<(), TransactionError> {
-        self.available_amount += amount;
-
         // We've already seen that transaction, so we probably have a data issue.
         // We can safely return an error.
         if self.tx_states.contains_key(&tx_id) {
             return Err(TransactionError::DuplicateTransaction);
         }
 
+        self.available_amount += amount;
+
         self.tx_states
             .insert(tx_id, (TransactionState::Deposited, amount));
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod deposit_tests {
+    use crate::ledger::account::TransactionError;
+
+    use super::{Account, TransactionState};
+    use rust_decimal_macros::dec;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_deposit_ok() {
+        let mut acc = Account {
+            frozen: false,
+            available_amount: dec!(3.0),
+            held_amount: dec!(1.0),
+            tx_states: HashMap::new(),
+        };
+
+        let got = acc.apply_deposit(1, dec!(3.0));
+        assert_eq!(Ok(()), got);
+        assert_eq!(dec!(6.0), acc.available_amount);
+        assert_eq!(dec!(1.0), acc.held_amount);
+    }
+
+    #[test]
+    fn test_deposit_already_exists() {
+        for state in vec![
+            TransactionState::Withdrawn,
+            TransactionState::Deposited,
+            TransactionState::Disputed,
+            TransactionState::ChargedBack,
+        ] {
+            let mut acc = Account {
+                frozen: false,
+                available_amount: dec!(99.99),
+                held_amount: dec!(88.88),
+                tx_states: HashMap::from([(1, (state, dec!(123.456)))]),
+            };
+
+            let got = acc.apply_deposit(1, dec!(3.0));
+            assert_eq!(Err(TransactionError::DuplicateTransaction), got);
+            assert_eq!(dec!(99.99), acc.available_amount);
+            assert_eq!(dec!(88.88), acc.held_amount);
+        }
     }
 }
 
@@ -168,11 +313,87 @@ impl Account {
                 self.held_amount += amount;
                 self.tx_states
                     .insert(tx_id, (TransactionState::Disputed, amount));
+
+                Ok(())
             }
-            _ => return Err(TransactionError::InvalidTransaction),
+            _ => Err(TransactionError::InvalidTransaction),
+        }
+    }
+}
+
+#[cfg(test)]
+mod dispute_tests {
+    use crate::ledger::account::TransactionError;
+
+    use super::{Account, TransactionState};
+    use rust_decimal_macros::dec;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_dispute_ok() {
+        let mut acc = Account {
+            frozen: false,
+            available_amount: dec!(8.0),
+            held_amount: dec!(1.0),
+            tx_states: HashMap::from([(1, (TransactionState::Deposited, dec!(5.0)))]),
         };
 
-        Ok(())
+        let got = acc.apply_dispute(1);
+        assert_eq!(Ok(()), got);
+        assert_eq!(dec!(3.0), acc.available_amount);
+        assert_eq!(dec!(6.0), acc.held_amount);
+    }
+
+    #[test]
+    fn test_dispute_ok_negative_amount() {
+        let mut acc = Account {
+            frozen: false,
+            available_amount: dec!(0.0),
+            held_amount: dec!(1.0),
+            tx_states: HashMap::from([(1, (TransactionState::Deposited, dec!(5.0)))]),
+        };
+
+        let got = acc.apply_dispute(1);
+        assert_eq!(Ok(()), got);
+        assert_eq!(dec!(-5.0), acc.available_amount);
+        assert_eq!(dec!(6.0), acc.held_amount);
+    }
+
+    #[test]
+    fn test_dispute_unknown_tx() {
+        let mut acc = Account {
+            frozen: false,
+            available_amount: dec!(10.0),
+            held_amount: dec!(10.0),
+            tx_states: HashMap::new(),
+        };
+
+        let got = acc.apply_dispute(1);
+        assert_eq!(Err(TransactionError::UnknownTransaction), got);
+        assert_eq!(dec!(10.0), acc.available_amount);
+        assert_eq!(dec!(10.0), acc.held_amount);
+        assert_eq!(false, acc.frozen);
+    }
+
+    #[test]
+    fn test_dispute_incorrect_state() {
+        for state in vec![
+            TransactionState::Withdrawn,
+            TransactionState::Disputed,
+            TransactionState::ChargedBack,
+        ] {
+            let mut acc = Account {
+                frozen: false,
+                available_amount: dec!(99.99),
+                held_amount: dec!(88.88),
+                tx_states: HashMap::from([(1, (state, dec!(123.456)))]),
+            };
+
+            let got = acc.apply_dispute(1);
+            assert_eq!(Err(TransactionError::InvalidTransaction), got);
+            assert_eq!(dec!(99.99), acc.available_amount);
+            assert_eq!(dec!(88.88), acc.held_amount);
+        }
     }
 }
 
@@ -181,29 +402,175 @@ impl Account {
         let (tx_state, amount) = self.get_tx_state(tx_id)?;
         match tx_state {
             TransactionState::Disputed => {
+                if self.held_amount < amount {
+                    return Err(TransactionError::NotEnoughFunds);
+                }
+
                 self.available_amount += amount;
                 self.held_amount -= amount;
                 self.tx_states
                     .insert(tx_id, (TransactionState::Deposited, amount));
+
+                Ok(())
             }
-            _ => return Err(TransactionError::InvalidTransaction),
+            _ => Err(TransactionError::InvalidTransaction),
+        }
+    }
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use crate::ledger::account::TransactionError;
+
+    use super::{Account, TransactionState};
+    use rust_decimal_macros::dec;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_resolve_ok() {
+        let mut acc = Account {
+            frozen: false,
+            available_amount: dec!(10.0),
+            held_amount: dec!(10.0),
+            tx_states: HashMap::from([(1, (TransactionState::Disputed, dec!(5.0)))]),
         };
 
-        Ok(())
+        let got = acc.apply_resolve(1);
+        assert_eq!(Ok(()), got);
+        assert_eq!(dec!(15.0), acc.available_amount);
+        assert_eq!(dec!(5.0), acc.held_amount);
+    }
+
+    #[test]
+    fn test_resolve_nok_negative_amount() {
+        let mut acc = Account {
+            frozen: false,
+            available_amount: dec!(10.0),
+            held_amount: dec!(1.0),
+            tx_states: HashMap::from([(1, (TransactionState::Disputed, dec!(5.0)))]),
+        };
+
+        let got = acc.apply_resolve(1);
+        assert_eq!(Err(TransactionError::NotEnoughFunds), got);
+        assert_eq!(dec!(10.0), acc.available_amount);
+        assert_eq!(dec!(1.0), acc.held_amount);
+    }
+
+    #[test]
+    fn test_resolve_unknown_tx() {
+        let mut acc = Account {
+            frozen: false,
+            available_amount: dec!(10.0),
+            held_amount: dec!(10.0),
+            tx_states: HashMap::new(),
+        };
+
+        let got = acc.apply_resolve(1);
+        assert_eq!(Err(TransactionError::UnknownTransaction), got);
+        assert_eq!(dec!(10.0), acc.available_amount);
+        assert_eq!(dec!(10.0), acc.held_amount);
+        assert_eq!(false, acc.frozen);
+    }
+
+    #[test]
+    fn test_resolve_incorrect_state() {
+        for state in vec![
+            TransactionState::Withdrawn,
+            TransactionState::Deposited,
+            TransactionState::ChargedBack,
+        ] {
+            let mut acc = Account {
+                frozen: false,
+                available_amount: dec!(99.99),
+                held_amount: dec!(88.88),
+                tx_states: HashMap::from([(1, (state, dec!(123.456)))]),
+            };
+
+            let got = acc.apply_resolve(1);
+            assert_eq!(Err(TransactionError::InvalidTransaction), got);
+            assert_eq!(dec!(99.99), acc.available_amount);
+            assert_eq!(dec!(88.88), acc.held_amount);
+        }
     }
 }
 
 impl Account {
     fn apply_chargeback(&mut self, tx_id: TransactionId) -> Result<(), TransactionError> {
-        let (_, amount) = self.get_tx_state(tx_id)?;
+        let (tx_state, amount) = self.get_tx_state(tx_id)?;
 
-        self.held_amount -= amount;
-        // No matter what the state is, we'll set it to "charged back".
-        self.tx_states
-            .insert(tx_id, (TransactionState::ChargedBack, amount));
+        match tx_state {
+            TransactionState::Disputed => {
+                self.held_amount -= amount;
+                self.tx_states
+                    .insert(tx_id, (TransactionState::ChargedBack, amount));
 
-        self.frozen = true;
+                self.frozen = true;
+                Ok(())
+            }
+            _ => Err(TransactionError::InvalidTransaction),
+        }
+    }
+}
 
-        Ok(())
+#[cfg(test)]
+mod chargeback_tests {
+    use crate::ledger::account::TransactionError;
+
+    use super::{Account, TransactionState};
+    use rust_decimal_macros::dec;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_chargeback_ok() {
+        let mut acc = Account {
+            frozen: false,
+            available_amount: dec!(10.0),
+            held_amount: dec!(10.0),
+            tx_states: HashMap::from([(1, (TransactionState::Disputed, dec!(8.0)))]),
+        };
+
+        let got = acc.apply_chargeback(1);
+        assert_eq!(Ok(()), got);
+        assert_eq!(dec!(10.0), acc.available_amount);
+        assert_eq!(dec!(2.0), acc.held_amount);
+        assert_eq!(true, acc.frozen);
+    }
+
+    #[test]
+    fn test_chargeback_unknown_tx() {
+        let mut acc = Account {
+            frozen: false,
+            available_amount: dec!(10.0),
+            held_amount: dec!(10.0),
+            tx_states: HashMap::new(),
+        };
+
+        let got = acc.apply_chargeback(1);
+        assert_eq!(Err(TransactionError::UnknownTransaction), got);
+        assert_eq!(dec!(10.0), acc.available_amount);
+        assert_eq!(dec!(10.0), acc.held_amount);
+        assert_eq!(false, acc.frozen);
+    }
+
+    #[test]
+    fn test_chargeback_invalid_state() {
+        for state in vec![
+            TransactionState::Withdrawn,
+            TransactionState::Deposited,
+            TransactionState::ChargedBack,
+        ] {
+            let mut acc = Account {
+                frozen: false,
+                available_amount: dec!(0),
+                held_amount: dec!(88.88),
+                tx_states: HashMap::from([(1, (state, dec!(10.0)))]),
+            };
+
+            let got = acc.apply_chargeback(1);
+            assert_eq!(Err(TransactionError::InvalidTransaction), got);
+            assert_eq!(dec!(0), acc.available_amount);
+            assert_eq!(dec!(88.88), acc.held_amount);
+            assert_eq!(false, acc.frozen);
+        }
     }
 }

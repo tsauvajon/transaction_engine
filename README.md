@@ -95,24 +95,37 @@ code, I made the `ledger` module unaware of infrastructure details (i.e. CSV),
 instead simply expecting a stream of something it knows: Transaction.
 
 In plain English, `input.rs` and `output.rs` both depend types from the `ledger`
-module, and `ledger` doesn't depend on anything. `main.rs` depends on
-everything but nothing depends on it.
+module, and `ledger` doesn't depend on anything. `main.rs`/`run.rs` depend on
+everything but nothing depends on them.
 
 ![Reading and Writing CSV depend on domain entities](./docs/ioc.png)
-
-### Transactions format
-I didn't consider unexpected amounts (e.g. with a dispute) to be a problem, they
-would simply be ignored. I did this because I thought it wouldn't cause any
-processing issue, and it seems safe to ignore.
-
-I considered additional data (e.g. 7 columns instead of 4) to be a problem, because
-it's hard to tell whether the fields we're reading are the correct ones.
 
 ### Channels
 
 Channels make communication between concurrent processes trivial. In our case,
 using channels and multiple threads allows to start processing transactions as
 soon as the first one is parsed.
+
+## Assumptions
+
+
+### Transactions format
+I didn't consider unexpected amounts (e.g. a dispute with an amount) to be a
+problem, they're simply ignored. I did this because I thought it wouldn't
+cause any processing issue, and it seems safe to ignore.
+
+I considered additional data (e.g. 7 columns instead of 4) to be a problem, because
+it's hard to tell whether the fields we're reading are the correct ones or not.
+
+### Negative amounts
+When you dispute a transaction but have an available amount lower than the
+transaction amount, your available amount can become negative. I'm making the
+assumption that this is ok. It can be resolved later and put the available
+amount back on positive.
+
+When you resolve a dispute and have a lower held amount then the transaction
+amount, then your held amount can become negative. I don't expect this to
+be possible, so in my implementation I return an error if this happens.
 
 ## Correctness
 
