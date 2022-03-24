@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/gh/tsauvajon/transaction_engine/branch/master/graph/badge.svg?token=qlOmPw4ST5)](https://codecov.io/gh/tsauvajon/transaction_engine)
+
 ## How to use
 
 Run the program:
