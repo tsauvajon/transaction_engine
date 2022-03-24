@@ -1,5 +1,8 @@
-use super::transaction::{self, Transaction};
-use super::{Amount, TransactionId};
+use super::{
+    transaction::{self, Transaction},
+    Amount, TransactionId,
+};
+
 use std::collections::HashMap;
 
 /// Note: I chose to keep errors simple here.
@@ -46,15 +49,14 @@ pub enum TransactionState {
 /// update its own state to be an accurate representation of the current
 /// account balance and state.
 ///
-/// In the assignment PDF, a balance is interchangeably called account, account
+/// In the assignment PDF, an account is interchangeably called account, account
 /// balance, client account, asset account.
 pub struct Account {
     pub frozen: bool,
     pub available_amount: Amount,
     pub held_amount: Amount,
 
-    // tx_states is a state machine. For example, you can only dispute a
-    // Deposited transaction, and you can only resolve a Disputed transaction.
+    // tx_states holds the last known state of each transaction.
     tx_states: HashMap<TransactionId, (TransactionState, Amount)>,
 }
 
@@ -73,19 +75,11 @@ impl Account {
         self.available_amount + self.held_amount
     }
 
-    // This could be improved by only storing transactions, and getting
-    // the "current state" on demand, instead of mutating itself.
-    //
-    // I chose the "mutation" approach to make it easier to reason about, but
-    // I believe it is an inferior approach, mainly because we lose traceability.
-    //
-    // I will refactor this if I can find the time to do it.
-    //
     // Note:
     // I'm making the assumption that clients cannot dispute withdrawals.
     // I'm basing that on the fact that the PDF says that disputes
     // "decrease the available funds", i.e. cancels a deposit, but
-    // never the opposite.
+    // never the opposite. This also seems to generally make sense.
     pub(super) fn apply(&mut self, tx: &Transaction) -> Result<(), TransactionError> {
         // When an account is frozen, no transaction whatsoever should be applied to it.
         if self.frozen {
@@ -101,7 +95,7 @@ impl Account {
         }
     }
 
-    // Get the current stored state of a transaction, as well as the transaction amount.
+    /// Get the current stored state of a transaction, as well as the transaction amount.
     fn get_tx_state(
         &self,
         tx_id: TransactionId,

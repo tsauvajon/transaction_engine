@@ -123,7 +123,7 @@ transaction amount, your available amount can become negative. I'm making the
 assumption that this is ok. It can be resolved later and put the available
 amount back on positive.
 
-When you resolve a dispute and have a lower held amount then the transaction
+When you resolve a dispute and have a lower held amount than the transaction
 amount, then your held amount can become negative. I don't expect this to
 be possible, so in my implementation I return an error if this happens.
 
@@ -153,7 +153,7 @@ Run it with `cargo bench`.
 FYI:
 ```
 calc_balances_large_file_140_000
-time:   [552.86 ms 563.35 ms 574.76 ms]
+time:   [289.23 ms 304.44 ms 320.50 ms]
 ```
 
 ## Known limitations/possible improvements
@@ -163,19 +163,23 @@ With more time, one of the first things I would have improved is
 **the rustdoc**. I have formatted my documentation for people reading the code
 and the associated comments, not for documentation generated with `cargo doc`.
 
-### All accounts in memory
+### All account states are in memory
 While transactions are streamed and not kept in memory, all the accounts and
 their states are. This is by design: it would be impossible to build the final
 account state without keeping transitional states in memory (unless we write it
 on disk or to another system, which would be much more complex, and out of
-scope for this program).
+scope for this program). Account state also include transaction.
 
 To give some examples:
-1M transactions for 2 different accounts would take very limited space,
-the transactions would be streamed an only 2 accounts would be kept in
-memory.
-100k transactions for 100k different accounts would take a lot more, as
-we'd need to hold 100k accounts at once in memory.
+1M transaction records for 10 different transactions, on 2 different accounts
+would take very limited space. The transactions would be streamed an only 10
+transactions and 2 accounts would be kept in memory.
+100k transaction records for 100k different transactions spread over 100k
+different accounts would use a lot more, as we'd need to hold 100k accounts
+at once in memory and the state of all 100k transactions. Again, this is because
+we can never know when we received the last transaction record for a same
+transaction id, or for a same account - so we have to reach the end of the
+file before we clean anything from memory.
 
 ### Error handling and recovery
 In the current implementation, all errors are brought back to the `run()`
@@ -201,12 +205,9 @@ of scope for the current assignment.
 ### Parallelisation
 Before going to production, and depending on volume, I would parallelise some
 parts of the program. For example, updating the ledger state
-(i.e. `ledger.apply()`) could be parallelised, but we would need to find a way
+(i.e. `ledger::build()`) could be parallelised, but we would need to find a way
 to partition transactions by client_id to avoid data races.
 
 We could also have multiple instances of this program running in parallel, but
 again design decisions would need to be made, to ensure data consistency.
 Parallelisation felt out of scope for the assignment.
-
-## TODO:
-- ledger.rs tests

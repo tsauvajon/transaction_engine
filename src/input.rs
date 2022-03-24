@@ -1,4 +1,5 @@
-use super::ledger::transaction::{self, Transaction};
+use crate::ledger::transaction::{self, Transaction};
+
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::sync::mpsc::{self, Receiver, SendError, Sender};

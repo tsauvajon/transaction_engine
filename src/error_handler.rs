@@ -1,4 +1,5 @@
 use crate::{input::Error, ledger::account::TransactionError};
+
 use std::{
     io::{self, Write},
     sync::mpsc::Receiver,
@@ -10,19 +11,17 @@ use std::{
 // that can be found.
 //
 // I decided to sink the errors instead of, for example, printing them,
-// to be sure it wouldn't cause issues with automating grading systems
+// to be sure it wouldn't cause issues with automated grading systems
 // (e.g. slow things down as it writes massive amounts of data to stderr).
 //
-// In a real-world scenario, something with errors. At least print them.
+// In a real-world scenario, we'd do something with errors.
+// At least print them.
 // We could either store them in some kind of tracing system where we can
 // learn more about them, or send some info to an external system
 // (e.g. a queue + a dedicated service listening on it) to deal with the
 // error outside of this system.
 //
 // We could also try to recover from some errors.
-//
-// Note: I'm not injecting the stderr to make the code more readable, but
-// by doing that we would be able to test that errors are properly printed.
 pub fn sink(
     input_errors: Receiver<Error>,
     transaction_errors: Receiver<TransactionError>,

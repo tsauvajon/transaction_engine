@@ -9,7 +9,6 @@ pub enum Type {
     Chargeback,         // Remove funds from held. Immediately freeze the account.
 }
 
-/// A Transaction is a
 #[derive(Debug, PartialEq)]
 pub struct Transaction {
     pub(super) tx_type: Type,
@@ -18,8 +17,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    // I made the Transaction fields private and used a "new" function to make sure we could only
-    // ever create transactions with 4 decimal places amounts.
+    // The new() function ensures we can only create amounts with a decimal precision of 4.
     pub fn new(tx_type: Type, client_id: ClientId, tx_id: TransactionId) -> Self {
         let tx_type = match tx_type {
             Type::Deposit(amount) => Type::Deposit(amount.round_dp(super::DECIMAL_PRECISION)),

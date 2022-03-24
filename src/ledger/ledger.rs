@@ -1,6 +1,9 @@
-use super::account::{Account, TransactionError};
-use super::transaction::Transaction;
-use super::ClientId;
+use super::{
+    account::{Account, TransactionError},
+    transaction::Transaction,
+    ClientId,
+};
+
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
 
