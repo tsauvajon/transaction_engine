@@ -113,7 +113,9 @@ impl Account {
 
         Ok((tx_state, *amount))
     }
+}
 
+impl Account {
     fn apply_withdrawal(
         &mut self,
         tx_id: TransactionId,
@@ -134,7 +136,9 @@ impl Account {
 
         Ok(())
     }
+}
 
+impl Account {
     fn apply_deposit(
         &mut self,
         tx_id: TransactionId,
@@ -153,7 +157,9 @@ impl Account {
 
         Ok(())
     }
+}
 
+impl Account {
     fn apply_dispute(&mut self, tx_id: TransactionId) -> Result<(), TransactionError> {
         let (tx_state, amount) = self.get_tx_state(tx_id)?;
         match tx_state {
@@ -168,7 +174,9 @@ impl Account {
 
         Ok(())
     }
+}
 
+impl Account {
     fn apply_resolve(&mut self, tx_id: TransactionId) -> Result<(), TransactionError> {
         let (tx_state, amount) = self.get_tx_state(tx_id)?;
         match tx_state {
@@ -183,7 +191,9 @@ impl Account {
 
         Ok(())
     }
+}
 
+impl Account {
     fn apply_chargeback(&mut self, tx_id: TransactionId) -> Result<(), TransactionError> {
         let (_, amount) = self.get_tx_state(tx_id)?;
 

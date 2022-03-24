@@ -1,14 +1,6 @@
-use std::sync::mpsc::Receiver;
-
+use crate::ledger::{account::Account, Amount, ClientId};
 use serde::Serialize;
-
-use crate::{
-    input::Error,
-    ledger::{
-        account::{Account, TransactionError},
-        Amount, ClientId,
-    },
-};
+use std::sync::mpsc::Receiver;
 
 #[derive(Serialize)]
 struct AccountRecord {
@@ -38,39 +30,6 @@ impl AccountRecord {
             frozen: acc.frozen,
         }
     }
-}
-
-// Here, we simply ignore the errors and keep processing other transactions.
-// It is explicitely stated that Disputes on non-existing transactions should
-// be ignored. I'm extending that behaviour to other kind of inconsistencies
-// that can be found.
-//
-// In a real-world scenario, we'd do more than just print errors.
-// We could either store them in some kind of tracing system where we can
-// learn more about them, or send some info to an external system
-// (e.g. a queue + a dedicated service listening on it) to deal with the
-// error outside of this system.
-//
-// We could also try to recover from some errors.
-//
-// Note: I'm not injecting the stderr to make the code more readable, but
-// by doing that we would be able to test that errors are properly printed.
-pub fn handle_errors(
-    input_errors: Receiver<Error>,
-    transaction_errors: Receiver<TransactionError>,
-) -> Vec<std::thread::JoinHandle<()>> {
-    vec![
-        std::thread::spawn(move || {
-            for err in input_errors {
-                eprintln!("failed to read record: {:?}", err);
-            }
-        }),
-        std::thread::spawn(move || {
-            for err in transaction_errors {
-                eprintln!("failed to apply transaction: {:?}", err);
-            }
-        }),
-    ]
 }
 
 // Writes the received accounts to the given stream.

@@ -1,5 +1,5 @@
 pub mod account;
-pub mod process;
+pub mod ledger;
 pub mod transaction;
 
 // Using named types doesn't provide any compiler help, but it helps a lot with
