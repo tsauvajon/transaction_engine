@@ -25,8 +25,8 @@ impl AccountRecord {
     fn new(client_id: ClientId, acc: &Account) -> Self {
         Self {
             client_id,
-            available_amount: acc.available_amount,
-            held_amount: acc.held_amount,
+            available_amount: acc.available.amount(),
+            held_amount: acc.held.amount(),
             total_amount: acc.total_amount(),
             frozen: acc.frozen,
         }
@@ -50,7 +50,7 @@ pub fn write(
 
 #[cfg(test)]
 mod write_tests {
-    use crate::ledger::account::Account;
+    use crate::ledger::account::{Account, Balance};
 
     use rust_decimal_macros::dec;
     use std::sync::mpsc;
@@ -66,8 +66,8 @@ mod write_tests {
         ] {
             let (client_id, available, held, frozen) = account;
             let mut account = Account::new();
-            account.available_amount = available;
-            account.held_amount = held;
+            account.available = Balance::new(available, dec!(0));
+            account.held = Balance::new(held, dec!(0));
             account.frozen = frozen;
             accounts_tx.send((client_id, account)).unwrap();
         }
