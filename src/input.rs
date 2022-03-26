@@ -2,13 +2,12 @@ use crate::ledger::transaction::{self, Transaction};
 
 use rust_decimal::Decimal;
 use serde::Deserialize;
-use std::sync::mpsc::{self, Receiver, SendError, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
     Csv(String),    // CSV is malformed
     Format(String), // Data format is incorrect
-    Send(String),   // Sending to the channel failed
 }
 
 impl From<csv::Error> for Error {
@@ -20,12 +19,6 @@ impl From<csv::Error> for Error {
 impl From<<TransactionRecord as TryInto<Transaction>>::Error> for Error {
     fn from(err: <TransactionRecord as TryInto<Transaction>>::Error) -> Self {
         Self::Format(err.to_string())
-    }
-}
-
-impl From<SendError<Transaction>> for Error {
-    fn from(err: SendError<Transaction>) -> Self {
-        Self::Send(err.to_string())
     }
 }
 

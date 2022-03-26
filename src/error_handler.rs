@@ -37,7 +37,7 @@ pub fn sink(
         std::thread::spawn(move || {
             for err in transaction_errors {
                 io::sink()
-                    .write_fmt(format_args!("failed to read record: {:?}", err))
+                    .write_fmt(format_args!("failed to apply transaction: {:?}", err))
                     .expect("Writing to sink should never fail");
             }
         }),
