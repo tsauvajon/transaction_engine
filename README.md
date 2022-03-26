@@ -204,6 +204,15 @@ keep processing other transactions, or
 with the errored transaction is resolved. In any case, it looked completely out
 of scope for the current assignment.
 
+### Ledger is not a "true" ledger
+In the current implementation, we simply append to the "credit" and "debit"
+fields of a balance. Instead, it should be an immutable collection of
+debits and credits, that we sum up when needed.
+I used the "mutation" approach to keep things simple, as it seemed to fit
+with the current problem, that has all the reproduction steps available
+(transactions.csv). In a real-world scenario, this would make everything
+harder to debug, so the immutable ledger would be the way to go.
+
 ### Parallelisation
 Before going to production, and depending on volume, I would parallelise some
 parts of the program. For example, updating the ledger state

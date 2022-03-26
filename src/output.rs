@@ -50,7 +50,7 @@ pub fn write(
 
 #[cfg(test)]
 mod write_tests {
-    use crate::ledger::account::account::{Account, Balance};
+    use crate::ledger::account::{account::Account, balance::Balance};
 
     use rust_decimal_macros::dec;
     use std::sync::mpsc;

@@ -11,7 +11,7 @@ impl Account {
 
         match tx_state {
             TransactionState::Disputed => {
-                self.held.debit += amount;
+                self.held.subtract(amount)?;
                 self.tx_states
                     .insert(tx_id, (TransactionState::ChargedBack, amount));
 
@@ -25,7 +25,7 @@ impl Account {
 
 #[cfg(test)]
 mod chargeback_tests {
-    use crate::ledger::account::account::{Balance, TransactionError};
+    use crate::ledger::account::{account::TransactionError, balance::Balance};
 
     use super::{Account, TransactionState};
     use rust_decimal_macros::dec;

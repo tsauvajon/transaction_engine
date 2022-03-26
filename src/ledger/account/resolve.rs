@@ -11,8 +11,12 @@ impl Account {
                     return Err(TransactionError::NotEnoughFunds);
                 }
 
-                self.available.credit += amount;
-                self.held.debit += amount;
+                // Due to the previous check on the amount, we can't get an
+                // overflow on held.subtract. So this is safe to do without
+                // any rollback mechanisms.
+                self.available.add(amount)?;
+                self.held.subtract(amount)?;
+
                 self.tx_states
                     .insert(tx_id, (TransactionState::Deposited, amount));
 
@@ -25,11 +29,12 @@ impl Account {
 
 #[cfg(test)]
 mod resolve_tests {
-    use crate::ledger::account::account::{Balance, TransactionError};
+    use crate::ledger::account::{account::TransactionError, balance::Balance};
 
     use super::{Account, TransactionState};
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
-    use std::collections::HashMap;
+    use std::{collections::HashMap, str::FromStr};
 
     #[test]
     fn test_resolve_ok() {
@@ -59,6 +64,23 @@ mod resolve_tests {
         assert_eq!(Err(TransactionError::NotEnoughFunds), got);
         assert_eq!(dec!(10.0), acc.available.amount());
         assert_eq!(dec!(1.0), acc.held.amount());
+    }
+
+    #[test]
+    fn test_resolve_nok_overflow_available() {
+        let very_big_number = Decimal::from_str("70000000000000000000000000000").unwrap();
+
+        let mut acc = Account {
+            frozen: false,
+            available: Balance::new(very_big_number, dec!(0)),
+            held: Balance::new(very_big_number, dec!(0)),
+            tx_states: HashMap::from([(1, (TransactionState::Disputed, very_big_number))]),
+        };
+
+        let got = acc.apply_resolve(1);
+        assert_eq!(Err(TransactionError::Overflow), got);
+        assert_eq!(very_big_number, acc.available.amount());
+        assert_eq!(very_big_number, acc.held.amount());
     }
 
     #[test]

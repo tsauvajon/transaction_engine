@@ -3,6 +3,7 @@ use crate::ledger::{
     Amount, TransactionId,
 };
 
+use super::balance::Balance;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
 
@@ -26,6 +27,9 @@ pub enum TransactionError {
     /// A dispute or resolve is applied on a transaction, but the current transaction
     /// state doesn't allow it.
     InvalidTransaction,
+
+    /// Adding more money to the balance would overflow.
+    Overflow,
 }
 
 /// The current state of a transaction, used to know whether we apply a new
@@ -42,45 +46,6 @@ pub enum TransactionState {
 
     /// The deposit was charged back.
     ChargedBack,
-}
-
-/// A balance is a sum of credits (adds more to the balance)
-/// and debits (remove money from the balance).
-///
-/// In this simple implementation, we only have the "current"
-/// credit and debit, and mutate the balance.
-/// In a more production-ready implementation, we'd have a
-/// collection of debits and collection of credits instead.
-///
-/// It could also have helps to add or remove money, compare
-/// to another balance...
-pub struct Balance {
-    pub(super) credit: Amount,
-    pub(super) debit: Amount,
-}
-
-impl Balance {
-    pub fn amount(&self) -> Amount {
-        self.credit - self.debit
-    }
-
-    pub const fn new(credit: Amount, debit: Amount) -> Self {
-        Self { credit, debit }
-    }
-}
-
-#[test]
-fn test_balance_amount() {
-    use rust_decimal_macros::dec;
-
-    for (credit, debit, want) in vec![
-        (dec!(10), dec!(0), dec!(10)),
-        (dec!(0), dec!(10), dec!(-10)),
-        (dec!(10), dec!(10), dec!(0)),
-        (dec!(5), dec!(10), dec!(-5)),
-    ] {
-        assert_eq!(want, Balance::new(credit, debit).amount());
-    }
 }
 
 /// Account is a state-machine, to which you can apply transactions.

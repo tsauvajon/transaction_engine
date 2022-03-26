@@ -17,7 +17,7 @@ impl Account {
             return Err(TransactionError::DuplicateTransaction);
         }
 
-        self.available.debit += amount;
+        self.available.subtract(amount)?;
         self.tx_states
             .insert(tx_id, (TransactionState::Withdrawn, amount));
 
@@ -27,7 +27,7 @@ impl Account {
 
 #[cfg(test)]
 mod withdrawal_tests {
-    use crate::ledger::account::account::{Balance, TransactionError};
+    use crate::ledger::account::{account::TransactionError, balance::Balance};
 
     use super::{Account, TransactionState};
     use rust_decimal_macros::dec;

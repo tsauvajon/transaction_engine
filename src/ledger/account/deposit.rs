@@ -14,7 +14,7 @@ impl Account {
             return Err(TransactionError::DuplicateTransaction);
         }
 
-        self.available.credit += amount;
+        self.available.add(amount)?;
 
         self.tx_states
             .insert(tx_id, (TransactionState::Deposited, amount));
@@ -25,7 +25,7 @@ impl Account {
 
 #[cfg(test)]
 mod deposit_tests {
-    use crate::ledger::account::account::{Balance, TransactionError};
+    use crate::ledger::account::{account::TransactionError, balance::Balance};
 
     use super::{Account, TransactionState};
     use rust_decimal_macros::dec;
