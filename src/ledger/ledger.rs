@@ -1,5 +1,5 @@
 use super::{
-    account::{Account, TransactionError},
+    account::account::{Account, TransactionError},
     transaction::Transaction,
     ClientId,
 };
@@ -24,11 +24,11 @@ pub fn build(
         let mut ledger: HashMap<ClientId, Account> = HashMap::new();
 
         for transaction in transactions {
-            let balance = ledger
+            let account = ledger
                 .entry(transaction.client_id)
                 .or_insert_with(Account::new);
 
-            if let Err(err) = balance.apply(&transaction) {
+            if let Err(err) = account.apply(&transaction) {
                 tx.send(err).unwrap(); // Would only fail if the rx is disconnected, which should not happen here.
             };
         }

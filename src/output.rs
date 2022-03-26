@@ -1,4 +1,4 @@
-use crate::ledger::{account::Account, Amount, ClientId};
+use crate::ledger::{account::account::Account, Amount, ClientId};
 
 use serde::Serialize;
 use std::sync::mpsc::Receiver;
@@ -50,7 +50,7 @@ pub fn write(
 
 #[cfg(test)]
 mod write_tests {
-    use crate::ledger::account::{Account, Balance};
+    use crate::ledger::account::account::{Account, Balance};
 
     use rust_decimal_macros::dec;
     use std::sync::mpsc;

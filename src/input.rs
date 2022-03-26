@@ -190,20 +190,12 @@ pub struct TransactionRecord {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum TransactionRecordType {
-    #[serde(rename = "withdrawal")]
     Withdrawal,
-
-    #[serde(rename = "deposit")]
     Deposit,
-
-    #[serde(rename = "dispute")]
     Dispute,
-
-    #[serde(rename = "resolve")]
     Resolve,
-
-    #[serde(rename = "chargeback")]
     Chargeback,
 }
 
