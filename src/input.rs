@@ -290,8 +290,6 @@ fn test_transaction_record_into_transaction_invalid_data() {
         amount: None,
     };
 
-    match Transaction::try_from(record) {
-        Ok(_) => panic!("unexpected successful conversion"),
-        Err(e) => assert_eq!("missing amount for withdrawal", e),
-    }
+    let got = Transaction::try_from(record);
+    assert_eq!(Err("missing amount for withdrawal"), got);
 }

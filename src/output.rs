@@ -75,14 +75,11 @@ mod write_tests {
 
         super::write(&mut output_stream, accounts).unwrap();
 
-        assert_eq!(
-            r#"client,available,held,total,locked
+        let want = r#"client,available,held,total,locked
 1,5.0,1.0,6.0,false
 2,1.234,123.4,124.634,false
 3,500.005,600.006,1100.011,true
-"#
-            .to_string(),
-            String::from_utf8(output_stream).unwrap(),
-        );
+"#;
+        assert_eq!(want.to_string(), String::from_utf8(output_stream).unwrap(),);
     }
 }
